@@ -1,0 +1,19 @@
+{
+  "name": "claude-telegram-plugin",
+  "version": "1.0.0",
+  "description": "Telegram MCP plugin for Claude Code — receive and send Telegram messages via Claude",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "grammy": "^1.30.0",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

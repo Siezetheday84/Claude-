@@ -1,0 +1,7 @@
+# Environment secrets
+.env
+telegram-plugin/.env
+
+# Dependencies
+node_modules/
+telegram-plugin/node_modules/

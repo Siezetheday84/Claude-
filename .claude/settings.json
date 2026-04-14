@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "node",
+      "args": ["telegram-plugin/index.js"],
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "${TELEGRAM_BOT_TOKEN}"
+      }
+    }
+  }
+}
