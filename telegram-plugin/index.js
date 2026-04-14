@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Claude Telegram Plugin — MCP Server
+ * Claude Telegram Plugin — MCP Server (Grammy edition)
  *
  * Exposes Telegram messaging capabilities to Claude Code via the
  * Model Context Protocol (MCP). Claude can send messages, fetch
@@ -15,7 +15,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import TelegramBot from "node-telegram-bot-api";
+import { Bot } from "grammy";
 import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -50,38 +50,48 @@ const ALLOWED_CHAT_IDS = process.env.TELEGRAM_ALLOWED_CHAT_IDS
   ? new Set(process.env.TELEGRAM_ALLOWED_CHAT_IDS.split(",").map((s) => s.trim()))
   : null;
 
-// --- Bot setup ---
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+// --- Bot setup (Grammy) ---
+const bot = new Bot(BOT_TOKEN);
 
-/** @type {Map<string, {id: string|number, type: string, title?: string, username?: string, messages: Array}>} */
+/** @type {Map<string, {id: number, type: string, title: string, username?: string, messages: Array}>} */
 const knownChats = new Map();
 const MAX_HISTORY = 50;
 
-bot.on("message", (msg) => {
-  const chatId = String(msg.chat.id);
+bot.on("message", (ctx) => {
+  const chatId = String(ctx.chat.id);
   if (ALLOWED_CHAT_IDS && !ALLOWED_CHAT_IDS.has(chatId)) return;
 
   if (!knownChats.has(chatId)) {
+    const c = ctx.chat;
+    const title =
+      c.type === "private"
+        ? [c.first_name, c.last_name].filter(Boolean).join(" ")
+        : c.title ?? c.username ?? chatId;
     knownChats.set(chatId, {
-      id: msg.chat.id,
-      type: msg.chat.type,
-      title: msg.chat.title ?? msg.chat.username ?? `${msg.chat.first_name ?? ""} ${msg.chat.last_name ?? ""}`.trim(),
-      username: msg.chat.username,
+      id: c.id,
+      type: c.type,
+      title,
+      username: "username" in c ? c.username : undefined,
       messages: [],
     });
   }
 
   const chat = knownChats.get(chatId);
   chat.messages.push({
-    messageId: msg.message_id,
-    from: msg.from?.username ?? msg.from?.first_name ?? "unknown",
-    text: msg.text ?? "[non-text]",
-    date: new Date(msg.date * 1000).toISOString(),
+    messageId: ctx.message.message_id,
+    from: ctx.from?.username ?? ctx.from?.first_name ?? "unknown",
+    text: ctx.message.text ?? "[non-text]",
+    date: new Date(ctx.message.date * 1000).toISOString(),
   });
 
   if (chat.messages.length > MAX_HISTORY) {
     chat.messages.splice(0, chat.messages.length - MAX_HISTORY);
   }
+});
+
+// Start long-polling in background (errors are logged, not fatal)
+bot.start({ drop_pending_updates: true }).catch((err) => {
+  console.error("Bot polling error:", err.message);
 });
 
 // --- MCP Server ---
@@ -94,17 +104,16 @@ server.tool(
   "send_message",
   "Send a Telegram message to a chat",
   {
-    chat_id: z.string().describe("Telegram chat ID or @username"),
+    chat_id: z.union([z.string(), z.number()]).describe("Telegram chat ID or @username"),
     text: z.string().min(1).max(4096).describe("Message text (Markdown supported)"),
     parse_mode: z
-      .enum(["Markdown", "MarkdownV2", "HTML", ""])
+      .enum(["Markdown", "MarkdownV2", "HTML"])
       .optional()
       .describe("Optional parse mode for formatting"),
   },
   async ({ chat_id, text, parse_mode }) => {
     try {
-      const opts = parse_mode ? { parse_mode } : {};
-      const sent = await bot.sendMessage(chat_id, text, opts);
+      const sent = await bot.api.sendMessage(chat_id, text, parse_mode ? { parse_mode } : {});
       return {
         content: [
           {
@@ -127,7 +136,13 @@ server.tool(
   "Get recent messages from a Telegram chat (buffered since bot started)",
   {
     chat_id: z.string().describe("Telegram chat ID"),
-    limit: z.number().int().min(1).max(MAX_HISTORY).optional().describe("Max messages to return (default 20)"),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_HISTORY)
+      .optional()
+      .describe("Max messages to return (default 20)"),
   },
   async ({ chat_id, limit = 20 }) => {
     const chat = knownChats.get(String(chat_id));
@@ -143,12 +158,7 @@ server.tool(
     }
     const msgs = chat.messages.slice(-limit);
     return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(msgs, null, 2),
-        },
-      ],
+      content: [{ type: "text", text: JSON.stringify(msgs, null, 2) }],
     };
   }
 );
@@ -187,7 +197,7 @@ server.tool(
   {},
   async () => {
     try {
-      const me = await bot.getMe();
+      const me = await bot.api.getMe();
       return {
         content: [{ type: "text", text: JSON.stringify(me, null, 2) }],
       };
@@ -200,6 +210,6 @@ server.tool(
   }
 );
 
-// --- Start ---
+// --- Start MCP transport ---
 const transport = new StdioServerTransport();
 await server.connect(transport);
