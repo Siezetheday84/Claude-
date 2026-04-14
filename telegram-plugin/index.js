@@ -12,6 +12,7 @@
  *   3. Register in .claude/settings.json (see project root)
  */
 
+import Anthropic from "@anthropic-ai/sdk";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -50,6 +51,13 @@ const ALLOWED_CHAT_IDS = process.env.TELEGRAM_ALLOWED_CHAT_IDS
   ? new Set(process.env.TELEGRAM_ALLOWED_CHAT_IDS.split(",").map((s) => s.trim()))
   : null;
 
+// Auto-reply via Claude API (optional — only if ANTHROPIC_API_KEY is set)
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const anthropic = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY }) : null;
+const AUTO_REPLY = process.env.TELEGRAM_AUTO_REPLY === "true" && !!anthropic;
+const SYSTEM_PROMPT = process.env.TELEGRAM_SYSTEM_PROMPT ||
+  "You are a helpful assistant. Reply concisely and clearly.";
+
 // --- Bot setup (Grammy) ---
 const bot = new Bot(BOT_TOKEN);
 
@@ -77,15 +85,43 @@ bot.on("message", (ctx) => {
   }
 
   const chat = knownChats.get(chatId);
+  const userText = ctx.message.text ?? "[non-text]";
+
   chat.messages.push({
     messageId: ctx.message.message_id,
     from: ctx.from?.username ?? ctx.from?.first_name ?? "unknown",
-    text: ctx.message.text ?? "[non-text]",
+    text: userText,
     date: new Date(ctx.message.date * 1000).toISOString(),
   });
 
   if (chat.messages.length > MAX_HISTORY) {
     chat.messages.splice(0, chat.messages.length - MAX_HISTORY);
+  }
+
+  // Auto-reply using Claude
+  if (AUTO_REPLY && ctx.message.text) {
+    ctx.replyWithChatAction("typing").catch(() => {});
+    try {
+      const history = chat.messages.slice(-10); // last 10 messages for context
+      const apiMessages = history.map((m) => ({
+        role: "user",
+        content: `${m.from}: ${m.text}`,
+      }));
+
+      const response = await anthropic.messages.create({
+        model: "claude-opus-4-6",
+        max_tokens: 1024,
+        system: SYSTEM_PROMPT,
+        messages: apiMessages,
+      });
+
+      const replyText = response.content.find((b) => b.type === "text")?.text;
+      if (replyText) {
+        await ctx.reply(replyText);
+      }
+    } catch (err) {
+      console.error("Auto-reply error:", err.message);
+    }
   }
 });
 
