@@ -167,6 +167,11 @@
       "sourceType": "github",
       "computedHash": "baefa6ed79c591d16e3056f3d8544fa2d60b896a618b931f37bf89da7af518d3"
     },
+    "remotion-best-practices": {
+      "source": "remotion-dev/skills",
+      "sourceType": "github",
+      "computedHash": "df654933e451556147e384078c3fbdbac997cb0fe4d2f2db7642000c239304c5"
+    },
     "revops": {
       "source": "coreyhaines31/marketingskills",
       "sourceType": "github",
