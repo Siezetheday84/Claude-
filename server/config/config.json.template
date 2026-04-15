@@ -1,0 +1,97 @@
+{
+  "_comment": [
+    "XRay-core VLESS+REALITY конфигурация.",
+    "Замените PLACEHOLDER-значения реальными (setup.sh делает это автоматически).",
+    "Документация: https://xtls.github.io/config/"
+  ],
+
+  "log": {
+    "loglevel": "warning",
+    "access":   "/var/log/xray/access.log",
+    "error":    "/var/log/xray/error.log"
+  },
+
+  "inbounds": [
+    {
+      "listen":   "0.0.0.0",
+      "port":     443,
+      "protocol": "vless",
+
+      "settings": {
+        "clients": [
+          {
+            "id":   "YOUR-UUID-HERE",
+            "flow": "xtls-rprx-vision",
+            "email": "user@example.com"
+          }
+        ],
+        "decryption": "none"
+      },
+
+      "streamSettings": {
+        "network":  "tcp",
+        "security": "reality",
+
+        "realitySettings": {
+          "show":   false,
+
+          "_dest_comment": "Легитимный HTTPS-сайт, под который маскируемся. Должен поддерживать TLSv1.3 + H2.",
+          "dest":   "microsoft.com:443",
+
+          "xver":   0,
+
+          "_serverNames_comment": "SNI, которые клиент может использовать (должны совпадать с dest-доменом).",
+          "serverNames": [
+            "microsoft.com",
+            "www.microsoft.com"
+          ],
+
+          "_privateKey_comment": "x25519 private key (только на сервере). Генерируется: xray x25519",
+          "privateKey": "YOUR-PRIVATE-KEY-HERE",
+
+          "minClientVer": "",
+          "maxClientVer": "",
+          "maxTimeDiff":  0,
+
+          "_shortIds_comment": "Случайные hex-строки 0-16 байт. Пустая строка тоже допустима.",
+          "shortIds": [
+            "YOUR-SHORT-ID-HERE",
+            ""
+          ]
+        }
+      },
+
+      "sniffing": {
+        "enabled":      true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly":    false
+      }
+    }
+  ],
+
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "tag":      "direct",
+      "settings": {
+        "domainStrategy": "UseIPv4"
+      }
+    },
+    {
+      "protocol": "blackhole",
+      "tag":      "block"
+    }
+  ],
+
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      {
+        "_comment": "Блокируем обращения к приватным адресам (защита от SSRF)",
+        "type":        "field",
+        "ip":          ["geoip:private"],
+        "outboundTag": "block"
+      }
+    ]
+  }
+}

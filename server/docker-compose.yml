@@ -1,0 +1,56 @@
+version: "3.8"
+
+# =============================================================================
+# XRay-core VLESS+REALITY — production docker-compose
+# Используйте setup.sh для первоначальной настройки.
+# =============================================================================
+
+services:
+  xray:
+    image: ghcr.io/xtls/xray-core:latest
+    container_name: xray-reality
+    restart: unless-stopped
+
+    # host-сеть: XRay слушает напрямую на порту хоста (443).
+    # Это устраняет NAT-overhead и упрощает firewall-правила.
+    network_mode: host
+
+    volumes:
+      # Конфиг монтируется read-only
+      - ./config:/etc/xray:ro
+      # Логи — именованный том, чтобы не засорять overlay-слой
+      - xray-logs:/var/log/xray
+
+    command: ["xray", "run", "-c", "/etc/xray/config.json"]
+
+    # Даём возможность биндиться на привилегированные порты (443)
+    # без запуска всего контейнера от root (security best-practice)
+    cap_add:
+      - NET_BIND_SERVICE
+
+    security_opt:
+      - no-new-privileges:true
+
+    # Увеличиваем лимит открытых файловых дескрипторов
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+    # Healthcheck: проверяем, что процесс xray жив
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x xray > /dev/null || exit 1"]
+      interval: 30s
+      timeout:  10s
+      retries:  3
+      start_period: 10s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  xray-logs:
+    driver: local
