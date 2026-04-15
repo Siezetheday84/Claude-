@@ -1,0 +1,74 @@
+{
+  "_comment": [
+    "VLESS + WebSocket + TLS — режим CDN-фронтинга через Cloudflare.",
+    "Используйте когда прямой IP сервера заблокирован.",
+    "Требует: домен, делегированный в Cloudflare, с проксированием (оранжевое облако).",
+    "CDN-фронтинг: клиент → Cloudflare CDN → ваш VPS.",
+    "TLS-сертификат выдаёт Cloudflare — DPI видит легитимный CF-трафик."
+  ],
+
+  "log": {
+    "loglevel": "warning",
+    "access":   "/var/log/xray/access.log",
+    "error":    "/var/log/xray/error.log"
+  },
+
+  "inbounds": [
+    {
+      "_comment": "WebSocket слушает на localhost:8443 — Nginx/Caddy проксирует снаружи с TLS",
+      "listen":   "127.0.0.1",
+      "port":     8443,
+      "protocol": "vless",
+
+      "settings": {
+        "clients": [
+          {
+            "id":   "YOUR-UUID-HERE",
+            "flow": "",
+            "email": "user@example.com"
+          }
+        ],
+        "decryption": "none"
+      },
+
+      "streamSettings": {
+        "network":  "ws",
+        "security": "none",
+        "wsSettings": {
+          "_comment": "Путь должен быть случайным (не /ws, не /ray)",
+          "path":    "/YOUR-RANDOM-PATH-HERE",
+          "headers": {}
+        }
+      },
+
+      "sniffing": {
+        "enabled":      true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly":    false
+      }
+    }
+  ],
+
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "tag":      "direct",
+      "settings": { "domainStrategy": "UseIPv4" }
+    },
+    {
+      "protocol": "blackhole",
+      "tag":      "block"
+    }
+  ],
+
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      {
+        "type":        "field",
+        "ip":          ["geoip:private"],
+        "outboundTag": "block"
+      }
+    ]
+  }
+}

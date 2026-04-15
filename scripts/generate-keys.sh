@@ -18,7 +18,7 @@ PRIVATE_KEY=$(echo "$KEYPAIR" | grep 'Private key:' | awk '{print $3}')
 PUBLIC_KEY=$(echo "$KEYPAIR"  | grep 'Public key:'  | awk '{print $3}')
 
 CLIENT_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
-SHORT_ID=$(openssl rand -hex 4)
+SHORT_ID=$(openssl rand -hex 8)
 
 echo ""
 echo -e "${CYAN}══════════════ Сгенерированные параметры ══════════════${NC}"

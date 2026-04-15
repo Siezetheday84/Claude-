@@ -16,21 +16,33 @@ Self-hosted VPN на базе [XRay-core](https://github.com/XTLS/Xray-core) с 
 
 ---
 
+## Два режима работы
+
+| Режим | Когда использовать | Скрипт |
+|-------|-------------------|--------|
+| **VLESS+REALITY** (основной) | IP сервера не заблокирован | `server/setup.sh` |
+| **VLESS+WS+TLS** (CDN-фронтинг) | IP сервера заблокирован, есть домен в Cloudflare | `server/setup-cdn.sh` |
+
+---
+
 ## Структура проекта
 
 ```
 ├── server/
-│   ├── setup.sh                    # Полная автоматическая установка
-│   ├── docker-compose.yml          # Docker Compose для XRay
+│   ├── setup.sh                        # Основная установка (VLESS+REALITY)
+│   ├── setup-cdn.sh                    # CDN-фронтинг через Cloudflare (VLESS+WS+TLS)
+│   ├── docker-compose.yml              # Docker Compose для XRay
 │   └── config/
-│       └── config.json.template    # Шаблон конфига (для ручной настройки)
+│       ├── config.json.template        # Шаблон REALITY конфига
+│       └── config-ws-tls.json.template # Шаблон WS+TLS конфига (CDN)
 ├── scripts/
-│   ├── generate-keys.sh            # Генерация x25519 ключей и UUID
-│   ├── generate-client-config.sh   # Генерация клиентских конфигов из secrets
-│   └── add-client.sh               # Добавление нового клиента
+│   ├── generate-keys.sh                # Генерация x25519 ключей и UUID
+│   ├── generate-client-config.sh       # Генерация клиентских конфигов из secrets
+│   ├── add-client.sh                   # Добавление нового клиента
+│   └── revoke-client.sh                # Отзыв UUID клиента
 └── client/
-    ├── android/README.md           # Настройка v2rayNG / Hiddify (Android)
-    └── ios/README.md               # Настройка Streisand / Hiddify (iOS)
+    ├── android/README.md               # Настройка v2rayNG / Hiddify (Android)
+    └── ios/README.md                   # Настройка Streisand / Hiddify (iOS)
 ```
 
 ---
@@ -68,8 +80,21 @@ sudo bash server/setup.sh
 
 ### 3. Настройка клиента
 
-**Android:** Импортируйте QR или URI в [v2rayNG](https://github.com/2dust/v2rayNG) или [Hiddify](https://github.com/hiddify/hiddify-next).  
-**iOS:** Используйте [Streisand](https://apps.apple.com/app/streisand/id6450534064) или [Hiddify](https://apps.apple.com/app/hiddify-proxy-vpn/id6596777532).
+После установки в `/opt/xray-reality/clients/` появятся файлы:
+
+| Файл | Назначение |
+|------|-----------|
+| `client.uri` | **VLESS URI** — основной файл для импорта (v2rayNG, Hiddify, Streisand) |
+| `qr-code.png` | QR-код для сканирования в мобильном приложении |
+| `singbox-outbound.json` | Outbound-блок для sing-box / Hiddify Next |
+| `xray-client-config.json` | Полный конфиг XRay-core для десктопа (NekoBox, Nekoray) |
+| `manual-params.txt` | Все параметры для ручной настройки |
+
+**Android:** Откройте v2rayNG → **+** → **Импорт из буфера** → вставьте содержимое `client.uri`.  
+Или: [Hiddify Next](https://github.com/hiddify/hiddify-next) → **+** → **Добавить по ссылке**.
+
+**iOS:** [Streisand](https://apps.apple.com/app/streisand/id6450534064) → **+** → вставьте VLESS URI.  
+Или: [Hiddify Next](https://apps.apple.com/app/hiddify-proxy-vpn/id6596777532).
 
 Подробные инструкции: [`client/android/README.md`](client/android/README.md) и [`client/ios/README.md`](client/ios/README.md).
 
@@ -115,12 +140,38 @@ docker compose stop
 # Обновление XRay до новой версии
 docker compose pull && docker compose up -d
 
-# Добавить нового клиента
-sudo bash /opt/xray-reality/../scripts/add-client.sh user@example.com
+# Добавить нового клиента (редактирует config.json + перезапуск ~1 сек)
+sudo bash scripts/add-client.sh user@example.com
 
-# Пересоздать клиентские конфиги
+# Отозвать клиента по UUID
+sudo bash scripts/revoke-client.sh a1b2c3d4-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+
+# Пересоздать клиентские конфиги из secrets
 bash scripts/generate-client-config.sh /opt/xray-reality/server-secrets.env
 ```
+
+---
+
+## Режим CDN-фронтинга (если IP сервера заблокирован)
+
+Если прямой IP вашего VPS попал под блокировку — подключите CDN-фронтинг через Cloudflare. Трафик идёт через Cloudflare CDN, IP которого не блокируется.
+
+**Требования:** домен, делегированный в Cloudflare (DNS-запись должна быть Proxied — оранжевое облако).
+
+```bash
+# Установить CDN-режим поверх основного
+export CDN_DOMAIN="vpn.yourdomain.com"
+sudo bash server/setup-cdn.sh
+```
+
+Скрипт:
+1. Устанавливает Nginx + certbot
+2. Получает TLS-сертификат от Let's Encrypt
+3. Настраивает Nginx как TLS-терминатор с проксированием на XRay
+4. Запускает XRay в WS-режиме на localhost
+5. Генерирует клиентский конфиг для CDN-режима
+
+Клиентские конфиги CDN режима сохраняются в `/opt/xray-reality/clients/cdn/`.
 
 ---
 
@@ -168,9 +219,10 @@ docker exec xray-reality cat /var/log/xray/error.log
 ## Безопасность
 
 - `server-secrets.env` содержит приватный ключ — **chmod 600**, не коммитьте в git
-- Смените `SHORT_ID` при подозрении на компрометацию (без смены ключей)
-- Ротируйте UUID клиента при необходимости отозвать доступ: `scripts/add-client.sh`
+- Смените `SHORT_ID` при подозрении на компрометацию (без смены ключей): `scripts/generate-keys.sh --env`
+- Отзывайте UUID клиента через `scripts/revoke-client.sh <uuid>` — не удаляйте вручную из config.json
 - Порт 443 открыт публично — это норма, сервер выглядит как HTTPS-сайт
+- Firewall: открыты только SSH и 443/tcp, всё остальное заблокировано
 
 ---
 

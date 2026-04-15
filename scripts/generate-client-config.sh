@@ -46,32 +46,72 @@ echo "$VLESS_URI" > "$OUT_DIR/client.uri"
 ok "VLESS URI → $OUT_DIR/client.uri"
 
 # --------------------------------------------------------------------------- #
-# v2rayNG / Hiddify JSON (vmess-share формат v2)                              #
+# XRay полный клиентский конфиг (для XRay-core / NekoBox / Nekoray)           #
+# v2rayNG импортирует VLESS только через URI — используйте client.uri          #
 # --------------------------------------------------------------------------- #
-cat > "$OUT_DIR/v2rayng-config.json" <<EOF
+cat > "$OUT_DIR/xray-client-config.json" <<EOF
 {
-  "v":    "2",
-  "ps":   "REALITY-${SERVER_IP}",
-  "add":  "${SERVER_IP}",
-  "port": "${XRAY_PORT}",
-  "id":   "${CLIENT_UUID}",
-  "aid":  "0",
-  "scy":  "none",
-  "net":  "tcp",
-  "type": "none",
-  "host": "",
-  "path": "",
-  "tls":  "reality",
-  "sni":  "${REALITY_SNI}",
-  "alpn": "",
-  "fp":   "chrome",
-  "pbk":  "${PUBLIC_KEY}",
-  "sid":  "${SHORT_ID}",
-  "spx":  "",
-  "flow": "xtls-rprx-vision"
+  "log": { "loglevel": "warning" },
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "port": 10808,
+      "protocol": "socks",
+      "settings": { "udp": true },
+      "tag": "socks-in"
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 10809,
+      "protocol": "http",
+      "tag": "http-in"
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "${SERVER_IP}",
+            "port": ${XRAY_PORT},
+            "users": [
+              {
+                "id": "${CLIENT_UUID}",
+                "flow": "xtls-rprx-vision",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "${REALITY_SNI}",
+          "fingerprint": "chrome",
+          "publicKey": "${PUBLIC_KEY}",
+          "shortId": "${SHORT_ID}",
+          "spiderX": ""
+        }
+      },
+      "tag": "proxy"
+    },
+    { "protocol": "freedom", "tag": "direct" },
+    { "protocol": "blackhole", "tag": "block" }
+  ],
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      { "type": "field", "ip": ["geoip:private"], "outboundTag": "direct" },
+      { "type": "field", "domain": ["geosite:cn"], "outboundTag": "direct" },
+      { "type": "field", "ip": ["geoip:cn"], "outboundTag": "direct" }
+    ]
+  }
 }
 EOF
-ok "v2rayNG конфиг → $OUT_DIR/v2rayng-config.json"
+ok "XRay client config → $OUT_DIR/xray-client-config.json"
 
 # --------------------------------------------------------------------------- #
 # Sing-box outbound (для Hiddify Next / sing-box)                             #

@@ -71,8 +71,8 @@ generate_keys() {
 # --------------------------------------------------------------------------- #
 generate_uuid() {
     CLIENT_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
-    # Генерируем случайный short ID (8 hex символов)
-    SHORT_ID=$(openssl rand -hex 4)
+    # Генерируем случайный short ID (16 hex символов = 8 байт, максимум по спеке REALITY)
+    SHORT_ID=$(openssl rand -hex 8)
     ok "UUID клиента: $CLIENT_UUID"
     ok "Short ID:     $SHORT_ID"
 }
@@ -170,14 +170,26 @@ services:
     volumes:
       - ./config:/etc/xray:ro
       - xray-logs:/var/log/xray
-    command: xray run -c /etc/xray/config.json
+    command: ["xray", "run", "-c", "/etc/xray/config.json"]
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x xray > /dev/null || exit 1"]
+      interval: 30s
+      timeout:  10s
+      retries:  3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   xray-logs:
+    driver: local
 EOF
     ok "docker-compose.yml создан"
 }
@@ -187,13 +199,33 @@ EOF
 # --------------------------------------------------------------------------- #
 configure_firewall() {
     info "Настраиваю ufw..."
-    ufw --force reset >/dev/null 2>&1 || true
-    ufw default deny incoming  >/dev/null
-    ufw default allow outgoing >/dev/null
-    ufw allow ssh              >/dev/null
+
+    # Определяем текущий SSH-порт из sshd_config, чтобы не заблокировать себя
+    SSH_PORT=$(ss -tlnp 2>/dev/null | awk '/sshd/{match($4, /:([0-9]+)$/, a); if(a[1]) print a[1]}' | head -1)
+    SSH_PORT="${SSH_PORT:-22}"
+
+    # НЕ делаем reset: добавляем правила поверх существующих,
+    # чтобы не снести правила других сервисов и не потерять доступ
+    ufw --force default deny incoming  >/dev/null
+    ufw --force default allow outgoing >/dev/null
+
+    # Разрешаем SSH на обнаруженном порту
+    if [[ "$SSH_PORT" != "22" ]]; then
+        ufw allow "${SSH_PORT}/tcp" >/dev/null
+        info "SSH: порт $SSH_PORT (нестандартный)"
+    fi
+    ufw allow ssh >/dev/null  # правило для порта 22 + любой sshd
+
     ufw allow "${XRAY_PORT}/tcp" >/dev/null
-    ufw --force enable         >/dev/null
-    ok "Firewall настроен: открыты SSH и порт ${XRAY_PORT}/tcp"
+
+    # Включаем только если ufw ещё не активен
+    if ! ufw status | grep -q "Status: active"; then
+        ufw --force enable >/dev/null
+    else
+        ufw reload >/dev/null
+    fi
+
+    ok "Firewall настроен: SSH($SSH_PORT) и порт ${XRAY_PORT}/tcp открыты"
 }
 
 # --------------------------------------------------------------------------- #
@@ -246,28 +278,53 @@ write_client_configs() {
     # Сохраняем URI
     echo "$VLESS_URI" > "$CLIENT_DIR/client.uri"
 
-    # --- JSON-конфиг для v2rayNG (Android) --------------------------------- #
-    cat > "$CLIENT_DIR/v2rayng-config.json" <<EOF
+    # --- Полный XRay клиентский конфиг (для NekoBox / Nekoray / десктоп) --- #
+    # v2rayNG/Hiddify импортируют VLESS через URI — используйте client.uri   #
+    cat > "$CLIENT_DIR/xray-client-config.json" <<EOF
 {
-  "v": "2",
-  "ps": "REALITY-${SERVER_IP}",
-  "add": "${SERVER_IP}",
-  "port": "${XRAY_PORT}",
-  "id":   "${CLIENT_UUID}",
-  "aid":  "0",
-  "scy":  "none",
-  "net":  "tcp",
-  "type": "none",
-  "host": "",
-  "path": "",
-  "tls":  "reality",
-  "sni":  "${REALITY_SNI}",
-  "alpn": "",
-  "fp":   "chrome",
-  "pbk":  "${PUBLIC_KEY}",
-  "sid":  "${SHORT_ID}",
-  "spx":  "",
-  "flow": "xtls-rprx-vision"
+  "log": { "loglevel": "warning" },
+  "inbounds": [
+    {
+      "listen": "127.0.0.1", "port": 10808,
+      "protocol": "socks", "settings": { "udp": true }, "tag": "socks-in"
+    },
+    {
+      "listen": "127.0.0.1", "port": 10809,
+      "protocol": "http", "tag": "http-in"
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "vless",
+      "settings": {
+        "vnext": [{
+          "address": "${SERVER_IP}",
+          "port": ${XRAY_PORT},
+          "users": [{"id": "${CLIENT_UUID}", "flow": "xtls-rprx-vision", "encryption": "none"}]
+        }]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "${REALITY_SNI}",
+          "fingerprint": "chrome",
+          "publicKey": "${PUBLIC_KEY}",
+          "shortId": "${SHORT_ID}",
+          "spiderX": ""
+        }
+      },
+      "tag": "proxy"
+    },
+    { "protocol": "freedom", "tag": "direct" },
+    { "protocol": "blackhole", "tag": "block" }
+  ],
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      { "type": "field", "ip": ["geoip:private"], "outboundTag": "direct" }
+    ]
+  }
 }
 EOF
 
