@@ -60,8 +60,10 @@ generate_keys() {
     # Запускаем одноразовый контейнер для генерации ключей
     # Entrypoint образа уже = "xray", поэтому передаём только "x25519"
     KEYPAIR=$(docker run --rm ghcr.io/xtls/xray-core:latest x25519)
-    PRIVATE_KEY=$(echo "$KEYPAIR" | grep 'Private key:' | awk '{print $3}')
-    PUBLIC_KEY=$(echo "$KEYPAIR"  | grep 'Public key:'  | awk '{print $3}')
+    # Новый формат (XRay >= 25.x): "PrivateKey: ..." / "Password (PublicKey): ..."
+    # Старый формат:               "Private key: ..." / "Public key: ..."
+    PRIVATE_KEY=$(echo "$KEYPAIR" | grep -i 'privatekey:'         | awk '{print $NF}')
+    PUBLIC_KEY=$(echo "$KEYPAIR"  | grep -i 'publickey\|Password' | awk '{print $NF}')
 
     [[ -n "$PRIVATE_KEY" ]] || die "Не удалось сгенерировать ключи"
     ok "Ключи REALITY сгенерированы"

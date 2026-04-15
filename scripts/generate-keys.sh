@@ -14,8 +14,8 @@ command -v uuidgen &>/dev/null || die "uuidgen не найден (apt install uu
 
 # Генерируем пару x25519 через официальный XRay образ
 KEYPAIR=$(docker run --rm ghcr.io/xtls/xray-core:latest x25519)
-PRIVATE_KEY=$(echo "$KEYPAIR" | grep 'Private key:' | awk '{print $3}')
-PUBLIC_KEY=$(echo "$KEYPAIR"  | grep 'Public key:'  | awk '{print $3}')
+PRIVATE_KEY=$(echo "$KEYPAIR" | grep -i 'privatekey:'         | awk '{print $NF}')
+PUBLIC_KEY=$(echo "$KEYPAIR"  | grep -i 'publickey\|Password' | awk '{print $NF}')
 
 CLIENT_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
 SHORT_ID=$(openssl rand -hex 8)
