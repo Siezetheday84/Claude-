@@ -237,7 +237,7 @@ configure_firewall() {
 start_xray() {
     info "Запускаю XRay..."
     cd "$INSTALL_DIR"
-    docker compose pull -q
+    docker compose pull
     docker compose up -d
     sleep 2
     if docker compose ps | grep -q "Up"; then
