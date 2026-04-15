@@ -142,6 +142,80 @@ EOF
 ok "sing-box outbound → $OUT_DIR/singbox-outbound.json"
 
 # --------------------------------------------------------------------------- #
+# Sing-box ПОЛНЫЙ конфиг с TUN (весь трафик через VPN, kill-switch, DoT-DNS)  #
+# Использовать в: Hiddify Next, sing-box Android/iOS, NekoBox                 #
+# --------------------------------------------------------------------------- #
+cat > "$OUT_DIR/singbox-tun-full.json" <<EOF
+{
+  "log": { "level": "warn", "timestamp": true },
+
+  "dns": {
+    "servers": [
+      { "tag": "dns-remote", "address": "tls://1.1.1.1",                    "detour": "proxy-out" },
+      { "tag": "dns-direct", "address": "https://dns.google/dns-query",      "detour": "direct-out" },
+      { "tag": "dns-block",  "address": "rcode://success" }
+    ],
+    "rules": [
+      { "geosite": ["category-ads-all"], "server": "dns-block",  "disable_cache": true },
+      { "outbound": ["any"],             "server": "dns-direct" }
+    ],
+    "final":    "dns-remote",
+    "strategy": "prefer_ipv4"
+  },
+
+  "inbounds": [
+    {
+      "type":           "tun",
+      "tag":            "tun-in",
+      "inet4_address":  "172.19.0.1/30",
+      "inet6_address":  "fdfe:dcba:9876::1/126",
+      "mtu":            9000,
+      "auto_route":     true,
+      "strict_route":   true,
+      "stack":          "system",
+      "sniff":          true,
+      "sniff_override_destination": false
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type":        "vless",
+      "tag":         "proxy-out",
+      "server":      "${SERVER_IP}",
+      "server_port": ${XRAY_PORT},
+      "uuid":        "${CLIENT_UUID}",
+      "flow":        "xtls-rprx-vision",
+      "tls": {
+        "enabled":     true,
+        "server_name": "${REALITY_SNI}",
+        "utls": { "enabled": true, "fingerprint": "chrome" },
+        "reality": {
+          "enabled":    true,
+          "public_key": "${PUBLIC_KEY}",
+          "short_id":   "${SHORT_ID}"
+        }
+      }
+    },
+    { "type": "direct", "tag": "direct-out" },
+    { "type": "block",  "tag": "block-out"  },
+    { "type": "dns",    "tag": "dns-out"    }
+  ],
+
+  "route": {
+    "rules": [
+      { "protocol": "dns",                "outbound": "dns-out"    },
+      { "ip_is_private": true,            "outbound": "direct-out" },
+      { "geosite": ["category-ads-all"],  "outbound": "block-out"  }
+    ],
+    "final":                 "proxy-out",
+    "auto_detect_interface": true
+  }
+}
+EOF
+ok "sing-box TUN (полный тоннель) → $OUT_DIR/singbox-tun-full.json"
+
+# --------------------------------------------------------------------------- #
 # Читаемый текстовый файл для ручной настройки                                #
 # --------------------------------------------------------------------------- #
 cat > "$OUT_DIR/manual-params.txt" <<EOF

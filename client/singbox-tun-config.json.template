@@ -1,0 +1,133 @@
+{
+  "_comment": [
+    "sing-box полный клиентский конфиг с TUN-интерфейсом.",
+    "Весь трафик телефона идёт через VPN (global mode).",
+    "DNS-over-TLS через VPN — исключает DNS-утечки.",
+    "kill-switch включён: при разрыве VPN трафик блокируется.",
+    "Использование: Hiddify Next / sing-box Android/iOS / Nekoray.",
+    "Замените PLACEHOLDER-значения реальными из manual-params.txt."
+  ],
+
+  "log": {
+    "level": "warn",
+    "timestamp": true
+  },
+
+  "dns": {
+    "servers": [
+      {
+        "_comment": "Основной DNS — через VPN-туннель, зашифрован TLS",
+        "tag":     "dns-remote",
+        "address": "tls://1.1.1.1",
+        "detour":  "proxy-out"
+      },
+      {
+        "_comment": "Fallback для резолвинга адреса самого VPS-сервера",
+        "tag":     "dns-direct",
+        "address": "https://dns.google/dns-query",
+        "detour":  "direct-out"
+      },
+      {
+        "tag":     "dns-block",
+        "address": "rcode://success"
+      }
+    ],
+    "rules": [
+      {
+        "_comment": "DNS-запросы к рекламным доменам блокируем",
+        "geosite":  ["category-ads-all"],
+        "server":   "dns-block",
+        "disable_cache": true
+      },
+      {
+        "_comment": "DNS для прямых исходящих соединений — локальный DNS",
+        "outbound": ["any"],
+        "server":   "dns-direct"
+      }
+    ],
+    "final": "dns-remote",
+    "strategy": "prefer_ipv4",
+    "disable_expire": false
+  },
+
+  "inbounds": [
+    {
+      "_comment": [
+        "TUN-интерфейс: весь трафик с телефона попадает сюда.",
+        "auto_route=true: автоматически добавляет системные маршруты.",
+        "strict_route=true: kill-switch — при обрыве VPN трафик блокируется.",
+        "sniff=true: определяет домен для маршрутизации."
+      ],
+      "type":            "tun",
+      "tag":             "tun-in",
+      "inet4_address":   "172.19.0.1/30",
+      "inet6_address":   "fdfe:dcba:9876::1/126",
+      "mtu":             9000,
+      "auto_route":      true,
+      "strict_route":    true,
+      "stack":           "system",
+      "sniff":           true,
+      "sniff_override_destination": false
+    }
+  ],
+
+  "outbounds": [
+    {
+      "_comment": "VLESS+REALITY — основной исходящий тоннель",
+      "type":        "vless",
+      "tag":         "proxy-out",
+      "server":      "YOUR_SERVER_IP",
+      "server_port": 443,
+      "uuid":        "YOUR-UUID-HERE",
+      "flow":        "xtls-rprx-vision",
+      "tls": {
+        "enabled":     true,
+        "server_name": "microsoft.com",
+        "utls": {
+          "enabled":     true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled":    true,
+          "public_key": "YOUR-PUBLIC-KEY-HERE",
+          "short_id":   "YOUR-SHORT-ID-HERE"
+        }
+      }
+    },
+    {
+      "type": "direct",
+      "tag":  "direct-out"
+    },
+    {
+      "type": "block",
+      "tag":  "block-out"
+    },
+    {
+      "type": "dns",
+      "tag":  "dns-out"
+    }
+  ],
+
+  "route": {
+    "_comment": "Правила маршрутизации: сначала прямые исключения, остальное — через VPN",
+    "rules": [
+      {
+        "_comment": "DNS-трафик — через dns outbound (резолвим правильно)",
+        "protocol":  "dns",
+        "outbound":  "dns-out"
+      },
+      {
+        "_comment": "Локальные адреса — напрямую (не через VPN)",
+        "ip_is_private": true,
+        "outbound":      "direct-out"
+      },
+      {
+        "_comment": "Реклама — блокируем на уровне маршрутизатора",
+        "geosite":  ["category-ads-all"],
+        "outbound": "block-out"
+      }
+    ],
+    "final":                  "proxy-out",
+    "auto_detect_interface":  true
+  }
+}
