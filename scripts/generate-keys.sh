@@ -13,7 +13,7 @@ command -v docker &>/dev/null || die "Docker не установлен"
 command -v uuidgen &>/dev/null || die "uuidgen не найден (apt install uuid-runtime)"
 
 # Генерируем пару x25519 через официальный XRay образ
-KEYPAIR=$(docker run --rm ghcr.io/xtls/xray-core:latest xray x25519)
+KEYPAIR=$(docker run --rm ghcr.io/xtls/xray-core:latest x25519)
 PRIVATE_KEY=$(echo "$KEYPAIR" | grep 'Private key:' | awk '{print $3}')
 PUBLIC_KEY=$(echo "$KEYPAIR"  | grep 'Public key:'  | awk '{print $3}')
 
