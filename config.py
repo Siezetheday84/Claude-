@@ -5,7 +5,7 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///video_service.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///data/video_service.db")
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Moscow")
 ADMIN_IDS = [
     int(x.strip())

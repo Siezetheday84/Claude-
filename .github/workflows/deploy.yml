@@ -1,0 +1,39 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd /opt/ai-video-bot
+
+            echo "Pulling latest code..."
+            git pull origin main
+
+            echo "Rebuilding and restarting bot..."
+            docker compose down
+            docker compose build --no-cache
+            docker compose up -d
+
+            echo "Waiting for bot to start..."
+            sleep 5
+
+            echo "=== Container status ==="
+            docker compose ps
+
+            echo "=== Last 20 log lines ==="
+            docker compose logs --tail=20
+
+            echo "Deploy complete!"
