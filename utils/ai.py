@@ -1,7 +1,12 @@
-import anthropic
+from openai import AsyncOpenAI
 from config import ANTHROPIC_API_KEY
 
-_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+_client = AsyncOpenAI(
+    api_key=ANTHROPIC_API_KEY,
+    base_url="https://openrouter.ai/api/v1",
+)
+
+MODEL = "anthropic/claude-3.5-sonnet"
 
 
 async def generate_script(topic: str, industry: str, region: str = "") -> str:
@@ -25,12 +30,12 @@ async def generate_script(topic: str, industry: str, region: str = "") -> str:
 
 Пиши живо, конкретно, без воды."""
 
-    message = await _client.messages.create(
-        model="claude-sonnet-4-6",
+    response = await _client.chat.completions.create(
+        model=MODEL,
         max_tokens=1500,
         messages=[{"role": "user", "content": prompt}],
     )
-    return message.content[0].text
+    return response.choices[0].message.content
 
 
 async def generate_topics(industries: list[str], region: str = "") -> list[str]:
@@ -50,12 +55,12 @@ async def generate_topics(industries: list[str], region: str = "") -> list[str]:
 Формат ответа — нумерованный список, каждая тема в одну строку.
 Только список, без пояснений."""
 
-    message = await _client.messages.create(
-        model="claude-sonnet-4-6",
+    response = await _client.chat.completions.create(
+        model=MODEL,
         max_tokens=800,
         messages=[{"role": "user", "content": prompt}],
     )
-    lines = message.content[0].text.strip().split("\n")
+    lines = response.choices[0].message.content.strip().split("\n")
     topics = []
     for line in lines:
         line = line.strip()
